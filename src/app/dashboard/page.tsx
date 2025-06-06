@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { TelnyxRTC, Call as TelnyxCall, VERTO_PROTOCOL_VERSION } from '@telnyx/webrtc';
+import { TelnyxRTC, Call as TelnyxCall } from '@telnyx/webrtc';
 import { Dialpad } from '@/components/call/Dialpad';
 import { CallDisplay } from '@/components/call/CallDisplay';
 import { CallControls } from '@/components/call/CallControls';
@@ -11,6 +11,7 @@ import { IncomingCallAlert } from '@/components/call/IncomingCallAlert';
 import type { CallState, CallLogEntry } from '@/types/call';
 import { useToast } from "@/hooks/use-toast";
 import { v4 as uuidv4 } from 'uuid';
+import { redirect } from 'next/navigation'; // Import redirect
 
 // IMPORTANT: CALLER_ID_NUMBER needs to be configured with your actual Telnyx Caller ID.
 // SIP Username and Password will now be read from cookies set during login.
@@ -20,7 +21,10 @@ function getCookieValue(name: string): string | undefined {
   if (typeof document === 'undefined') return undefined; // Ensure it runs client-side
   const value = `; ${document.cookie}`;
   const parts = value.split(`; ${name}=`);
-  if (parts.length === 2) return parts.pop()?.split(';').shift();
+  if (parts.length === 2) {
+    const cookieVal = parts.pop()?.split(';').shift();
+    return cookieVal ? decodeURIComponent(cookieVal) : undefined;
+  }
   return undefined;
 }
 
@@ -77,11 +81,14 @@ export default function DashboardPage() {
     if (!sipUsernameFromCookie || !sipPasswordFromCookie) {
       toast({
         title: "Authentication Error",
-        description: "SIP credentials not found. Please log in again.",
+        description: "SIP credentials not found. Redirecting to login.",
         variant: "destructive",
-        duration: 10000,
+        duration: 5000, 
       });
-      setCallState('disconnected');
+      // Redirect to login if cookies are not found
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
       return;
     }
     
@@ -128,8 +135,16 @@ export default function DashboardPage() {
         const call = notification.call as TelnyxCall;
         if (call.state === TelnyxRTC.VERTO_STATES.RINGING && call.direction === 'inbound') {
           if (currentCall) {
-            call.hangup();
-            toast({ title: "Call Rejected", description: "Another call is already in progress.", variant: "destructive"});
+            // If already in a call or processing an incoming call, reject the new one.
+            // You might want to send a busy signal if the SDK supports it.
+            try {
+              call.hangup({ cause: 'USER_BUSY', causeCode: 486 });
+            } catch (e) {
+              console.warn("Failed to hangup new incoming call while busy:", e);
+              // Fallback if specific hangup with cause fails
+              try { call.hangup(); } catch (e2) { console.error("Fallback hangup failed:", e2); }
+            }
+            toast({ title: "Call Rejected", description: "Another call is already in progress or ringing.", variant: "destructive"});
             return;
           }
           setIsReceivingCall(true);
@@ -151,7 +166,11 @@ export default function DashboardPage() {
       client.disconnect();
       setTelnyxClient(null);
       if (currentCall) {
-        currentCall.hangup();
+        try {
+          currentCall.hangup();
+        } catch (e) {
+          console.warn("Error hanging up call on component unmount:", e);
+        }
         setCurrentCall(null);
       }
     };
@@ -228,7 +247,7 @@ export default function DashboardPage() {
     } else if (telnyxClient) {
         setCallState('connecting'); 
     } else {
-        setCallState('idle');
+        setCallState('idle'); // Or 'disconnected' if cookies were invalid leading here
     }
 
   }, [telnyxClient]);
@@ -236,15 +255,21 @@ export default function DashboardPage() {
   const handleCallEnd = useCallback((callEnded: TelnyxCall, finalState: CallState) => {
     const numberForLog = callEnded.remoteCallerNumber || callEnded.options.destinationNumber || "Unknown";
     const cnameForLog = callEnded.remoteCallerName || undefined;
-    const callTypeForLog: CallLogEntry['type'] = callEnded.direction === 'inbound' ? (finalState === 'active' || callStartTime ? 'incoming' : 'missed') : 'outgoing';
+    // Determine if the call was active or missed for logging
+    const wasActiveOrAnswered = callStartTime && (finalState === 'active' || finalState === 'hangup' || finalState === 'destroy' || finalState === 'held');
+    const callTypeForLog: CallLogEntry['type'] = callEnded.direction === 'inbound' 
+      ? (wasActiveOrAnswered ? 'incoming' : 'missed') 
+      : 'outgoing';
     
     const duration = callStartTime ? Math.floor((Date.now() - callStartTime) / 1000) : 0;
-    if (callStartTime || callTypeForLog === 'missed') { 
+    
+    // Only log if it was an established call or a missed call
+    if (wasActiveOrAnswered || callTypeForLog === 'missed' || (callEnded.direction === 'outgoing' && finalState !== 'new' && finalState !== 'trying' && finalState !== 'requesting')) { 
         addCallToLog({ 
           phoneNumber: numberForLog, 
           cname: cnameForLog, 
           type: callTypeForLog, 
-          startTime: callStartTime || Date.now(), 
+          startTime: callStartTime || Date.now(), // Use current time if callStartTime wasn't set (e.g. quick failed outgoing)
           durationInSeconds: duration,
           status: finalState
         });
@@ -252,8 +277,15 @@ export default function DashboardPage() {
     
     if (remoteAudioRef.current) {
       remoteAudioRef.current.srcObject = null; 
+      remoteAudioRef.current.load(); // Ensure media is fully cleared
     }
-    setCurrentCall(null); 
+
+    setCurrentCall(prevCall => {
+        if (prevCall && prevCall.id === callEnded.id) {
+            return null;
+        }
+        return prevCall; // If a different call became current in the meantime
+    }); 
     resetCallVisualState();
 
   }, [addCallToLog, callStartTime, resetCallVisualState]);
@@ -263,8 +295,8 @@ export default function DashboardPage() {
       toast({ title: "Not Connected", description: "Telnyx client is not connected.", variant: "destructive" });
       return;
     }
-    if (currentCall) {
-      toast({ title: "Call In Progress", description: "Please end the current call before starting a new one.", variant: "destructive" });
+    if (currentCall || isReceivingCall) {
+      toast({ title: "Call In Progress", description: "Please end the current call or handle the incoming call before starting a new one.", variant: "destructive" });
       return;
     }
 
@@ -283,18 +315,23 @@ export default function DashboardPage() {
     attachCallListeners(newCall);
     setActiveCallNumber(numberToCall);
     setCallState('new'); 
+    setCallStartTime(Date.now()); // Set start time for outgoing calls immediately for duration tracking
 
-  }, [telnyxClient, currentCall, toast, attachCallListeners]);
+  }, [telnyxClient, currentCall, isReceivingCall, toast, attachCallListeners]);
 
   const handleHangup = useCallback(() => {
     if (isReceivingCall && incomingCallDetails?.call) { 
-        incomingCallDetails.call.hangup();
+        try {
+          incomingCallDetails.call.hangup();
+        } catch (e) {
+          console.warn("Error hanging up incoming/declined call:", e);
+        }
         toast({ title: "Call Declined", description: `Incoming call from ${incomingCallDetails.callerNumber} declined.`});
         addCallToLog({ 
             phoneNumber: incomingCallDetails.callerNumber, 
             cname: incomingCallDetails.callerName, 
             type: 'missed', 
-            startTime: Date.now(), 
+            startTime: callStartTime || Date.now(), // Use callStartTime if set (e.g. if call was ringing for a while)
             status: 'hangup' 
         });
         setIsReceivingCall(false);
@@ -305,11 +342,18 @@ export default function DashboardPage() {
     }
 
     if (currentCall) {
-      currentCall.hangup();
+      try {
+        currentCall.hangup();
+      } catch (e) {
+        console.warn("Error hanging up current call:", e);
+        // Even if hangup fails, proceed to reset visual state as call is likely ended or in error
+        handleCallEnd(currentCall, 'hangup'); // Manually trigger call end logic
+      }
     } else {
+      // If no current call, but somehow in a call-like state, reset.
       resetCallVisualState();
     }
-  }, [currentCall, isReceivingCall, incomingCallDetails, toast, addCallToLog, resetCallVisualState]);
+  }, [currentCall, isReceivingCall, incomingCallDetails, toast, addCallToLog, resetCallVisualState, callStartTime, handleCallEnd]);
 
 
   const handleMuteToggle = () => {
@@ -329,11 +373,13 @@ export default function DashboardPage() {
   const handleHoldToggle = () => {
     if (currentCall && callState === 'active') {
       currentCall.hold();
-      setIsOnHold(true);
+      // Telnyx SDK will fire stateChange event to 'held', so UI will update via that.
+      // setIsOnHold(true); // Optionally set immediately, or rely on event
       toast({ title: "Call on Hold" });
     } else if (currentCall && callState === 'held') {
       currentCall.unhold();
-      setIsOnHold(false);
+      // Telnyx SDK will fire stateChange event to 'active'.
+      // setIsOnHold(false); // Optionally set immediately
       toast({ title: "Call Resumed" });
     }
   };
@@ -343,14 +389,16 @@ export default function DashboardPage() {
       incomingCallDetails.call.answer();
       setActiveCallNumber(incomingCallDetails.callerNumber);
       setCname(incomingCallDetails.callerName);
-      setCallStartTime(Date.now());
+      setCallStartTime(Date.now()); // Set call start time on answer
       setIsReceivingCall(false); 
-      setIncomingCallDetails(null);
+      // setCurrentCall is already set when incoming call was notified
+      setIncomingCallDetails(null); // Clear incoming details as call is now active
       toast({ title: "Call Answered", description: `Connected to ${incomingCallDetails.callerName || incomingCallDetails.callerNumber}` });
     }
   };
 
-  const dialpadDisabled = !(callState === 'connected' || callState === 'idle' || callState === 'disconnected') || !!currentCall || isReceivingCall;
+  // Disable dialpad if not connected, or if a call is active/ringing/incoming
+  const dialpadDisabled = !(callState === 'connected' || callState === 'idle' || callState === 'disconnected' || callState === 'hangup') || !!currentCall || isReceivingCall;
 
 
   return (
@@ -381,7 +429,7 @@ export default function DashboardPage() {
         onAnswer={(isReceivingCall && incomingCallDetails) ? handleAnswerIncomingCall : undefined}
       />
       
-      { (callState === 'connected' || callState === 'idle' || callState === 'disconnected' ) && !currentCall && !isReceivingCall &&
+      { (callState === 'connected' || callState === 'idle' || callState === 'disconnected' || callState === 'hangup' ) && !currentCall && !isReceivingCall &&
         <Dialpad
           currentNumber={currentDialNumber}
           onNumberChange={setCurrentDialNumber}
@@ -395,3 +443,4 @@ export default function DashboardPage() {
   );
 }
 
+    
