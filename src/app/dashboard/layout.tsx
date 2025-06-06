@@ -28,6 +28,8 @@ export default function DashboardLayout({
       <main className="flex-1 container py-8">
         {children}
       </main>
+      {/* Audio element for Telnyx WebRTC remote media */}
+      <audio id="remoteAudio" autoPlay playsInline />
     </div>
   );
 }
