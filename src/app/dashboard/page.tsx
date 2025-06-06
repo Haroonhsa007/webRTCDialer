@@ -545,14 +545,14 @@ export default function DashboardPage() {
   useEffect(() => {
     const cleanup = setupTelnyxClient();
     return cleanup;
-  }, [setupTelnyxClient]);
+  }, [callerId]); // Only depend on callerId changes
 
   // Separate effect to handle call listeners
   useEffect(() => {
     if (currentCall && !isReceivingCall) {
       attachCallListeners(currentCall);
     }
-  }, [currentCall, isReceivingCall, attachCallListeners]);
+  }, [currentCall, isReceivingCall]); // Remove attachCallListeners from dependencies
 
   // Effect to load callerId from localStorage on initial mount
   useEffect(() => {
