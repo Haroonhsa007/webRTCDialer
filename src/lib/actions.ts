@@ -42,7 +42,7 @@ export async function login(prevState: LoginState, formData: FormData): Promise<
   console.log(`Login attempt with username: ${username}. Storing credentials in cookies and proceeding to dashboard.`);
   
   // Simulate API call delay if needed, or remove
-  await new Promise(resolve => setTimeout(resolve, 250));
+  // await new Promise(resolve => setTimeout(resolve, 250)); // Kept commented as it's for simulation
 
   redirect('/dashboard'); 
 }
@@ -55,4 +55,3 @@ export async function logout() {
   console.log("User logged out, Telnyx credentials cookies cleared.");
   redirect('/login');
 }
-
