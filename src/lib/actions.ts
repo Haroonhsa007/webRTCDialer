@@ -13,7 +13,7 @@ export type LoginState = {
   errors?: {
     username?: string[];
     password?: string[];
-    general?: string[];
+    general?: string[]; // Keep general for other potential errors
   };
   message?: string | null;
 };
@@ -27,29 +27,22 @@ export async function login(prevState: LoginState, formData: FormData): Promise<
   if (!validatedFields.success) {
     return {
       errors: validatedFields.error.flatten().fieldErrors,
-      message: 'Invalid credentials.',
+      message: 'Invalid input.', // More generic message as we are not checking credentials here
     };
   }
 
   const { username, password } = validatedFields.data;
 
-  // Mock Telnyx authentication
-  // In a real app, you would integrate with Telnyx API/SDK here
-  console.log(`Attempting login for user: ${username}`);
+  // Simulate some processing, but no actual credential check here for login gating.
+  // The actual Telnyx connection attempt will use credentials on the dashboard page.
+  console.log(`Login attempt with username: ${username}. Proceeding to dashboard.`);
   
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  // Simulate API call delay if needed, or remove
+  await new Promise(resolve => setTimeout(resolve, 500)); // Reduced delay
 
-  if (username === "testuser" && password === "password123") {
-    // For demo purposes, we're not setting up actual sessions.
-    // We'll just redirect. In a real app, set up session/cookie here.
-  } else {
-    return {
-      errors: { general: ["Invalid username or password."] },
-      message: "Login failed.",
-    };
-  }
-  
+  // If Zod validation passes, redirect to dashboard.
+  // The responsibility for correct Telnyx credentials now lies solely with their configuration
+  // on the dashboard page itself.
   redirect('/dashboard'); 
   // Note: redirect() must be called outside of a try/catch block.
   // If it's inside and an error occurs before redirect, it might not work as expected.
