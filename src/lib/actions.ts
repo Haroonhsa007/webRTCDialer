@@ -1,3 +1,4 @@
+
 "use server";
 
 import { redirect } from 'next/navigation';
@@ -49,7 +50,7 @@ export async function login(prevState: LoginState, formData: FormData): Promise<
     };
   }
   
-  redirect('/'); 
+  redirect('/dashboard'); 
   // Note: redirect() must be called outside of a try/catch block.
   // If it's inside and an error occurs before redirect, it might not work as expected.
   // Since we are redirecting, the return type of LoginState might not be fully utilized here for the success case.
