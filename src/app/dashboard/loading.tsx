@@ -4,6 +4,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function Loading() {
   return (
     <div className="w-full max-w-lg mx-auto flex flex-col items-center space-y-6">
+      {/* Skeleton for potential Caller ID input card */}
+      <div className="w-full max-w-md">
+        <Skeleton className="h-10 w-1/2 mx-auto mb-2" /> 
+        <Skeleton className="h-24 w-full rounded-xl" />
+      </div>
+      
       <CardSkeleton height="120px" />
       
       <div className="flex items-center justify-center space-x-3 p-4 bg-card rounded-xl shadow-xl mt-4 w-full max-w-xs">
