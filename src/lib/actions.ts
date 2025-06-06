@@ -3,6 +3,7 @@
 
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
+import { cookies } from 'next/headers';
 
 const LoginSchema = z.object({
   username: z.string().min(1, "Username is required"),
@@ -13,7 +14,7 @@ export type LoginState = {
   errors?: {
     username?: string[];
     password?: string[];
-    general?: string[]; // Keep general for other potential errors
+    general?: string[];
   };
   message?: string | null;
 };
@@ -27,31 +28,31 @@ export async function login(prevState: LoginState, formData: FormData): Promise<
   if (!validatedFields.success) {
     return {
       errors: validatedFields.error.flatten().fieldErrors,
-      message: 'Invalid input.', // More generic message as we are not checking credentials here
+      message: 'Invalid input.',
     };
   }
 
   const { username, password } = validatedFields.data;
 
-  // Simulate some processing, but no actual credential check here for login gating.
-  // The actual Telnyx connection attempt will use credentials on the dashboard page.
-  console.log(`Login attempt with username: ${username}. Proceeding to dashboard.`);
+  // Store credentials in cookies to be used by the Telnyx client on the dashboard
+  // NB: For production, consider more secure ways to handle client-side credentials.
+  cookies().set('telnyx_sip_username', username, { path: '/' });
+  cookies().set('telnyx_sip_password', password, { path: '/' });
+
+  console.log(`Login attempt with username: ${username}. Storing credentials in cookies and proceeding to dashboard.`);
   
   // Simulate API call delay if needed, or remove
-  await new Promise(resolve => setTimeout(resolve, 500)); // Reduced delay
+  await new Promise(resolve => setTimeout(resolve, 250));
 
-  // If Zod validation passes, redirect to dashboard.
-  // The responsibility for correct Telnyx credentials now lies solely with their configuration
-  // on the dashboard page itself.
   redirect('/dashboard'); 
-  // Note: redirect() must be called outside of a try/catch block.
-  // If it's inside and an error occurs before redirect, it might not work as expected.
-  // Since we are redirecting, the return type of LoginState might not be fully utilized here for the success case.
-  // This is fine as redirect throws a NEXT_REDIRECT error.
 }
 
 export async function logout() {
-  // In a real app, clear session/cookie here
-  console.log("User logged out");
+  // Clear the Telnyx credentials cookies
+  cookies().delete('telnyx_sip_username');
+  cookies().delete('telnyx_sip_password');
+  
+  console.log("User logged out, Telnyx credentials cookies cleared.");
   redirect('/login');
 }
+
