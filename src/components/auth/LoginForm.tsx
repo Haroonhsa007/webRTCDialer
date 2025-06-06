@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from 'react-dom';
+import { useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { login, type LoginState } from '@/lib/actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +11,7 @@ import { LogIn, AlertCircle } from 'lucide-react';
 
 export function LoginForm() {
   const initialState: LoginState = { message: null, errors: {} };
-  const [state, dispatch] = useFormState(login, initialState);
+  const [state, dispatch] = useActionState(login, initialState);
   
   return (
     <Card className="w-full max-w-md shadow-xl">
