@@ -29,7 +29,6 @@ This document provides an in-depth technical explanation of the WebRTC Talk appl
 ├── public/
 ├── src/
 │   ├── app/
-│   │   ├── (app)/              # (Obsolete, should be removed if still present)
 │   │   ├── dashboard/          # Authenticated area - main application
 │   │   │   ├── error.tsx       # Error boundary for dashboard
 │   │   │   ├── layout.tsx      # Layout for dashboard (header, audio element)
@@ -44,9 +43,9 @@ This document provides an in-depth technical explanation of the WebRTC Talk appl
 │   │   ├── auth/
 │   │   │   └── LoginForm.tsx   # Login form component
 │   │   ├── call/
-│   │   │   ├── CallControls.tsx # Buttons for mute, hold, hangup, answer
+│   │   │   ├── CallControls.tsx # Buttons for mute, hold, hangup, answer, DTMF keypad
 │   │   │   ├── CallDisplay.tsx  # Shows call status, number, duration
-│   │   │   ├── Dialpad.tsx      # Numerical dialpad
+│   │   │   ├── Dialpad.tsx      # Numerical dialpad for initiating calls
 │   │   │   └── IncomingCallAlert.tsx # Modal for incoming calls
 │   │   ├── history/
 │   │   │   └── CallHistory.tsx # Displays call log
@@ -113,13 +112,13 @@ The component relies heavily on `useState` and `useRef` for managing:
 *   **Primary `useEffect` Hook (depends on `callerId`)**:
     *   **Audio Element**: Gets a reference to `<audio id="remoteAudio">`.
     *   **SIP Credentials**: Reads `telnyx_sip_username` and `telnyx_sip_password` from cookies using a helper function `getCookieValue`.
-        *   If not found, redirects to `/login`.
+        *   If not found, redirects to `/login` via `window.location.href`.
     *   **Caller ID**:
         *   Reads `callerId` from `localStorage` (key: `CALLER_ID_STORAGE_KEY`).
         *   If found, sets `callerId` state and `isCallerIdNeeded` to `false`.
-        *   If not found, sets `isCallerIdNeeded` to `true`, prompting the user for input. The Telnyx client will not connect until Caller ID is provided.
+        *   If not found, sets `isCallerIdNeeded` to `true`, prompting the user for input. The Telnyx client will not connect until Caller ID is provided and saved.
     *   **Conditional TelnyxRTC Instantiation**:
-        *   Only proceeds if SIP credentials AND a `callerId` are available.
+        *   Only proceeds if SIP credentials AND a `callerId` (from `localStorage` or user input) are available.
         *   Creates `new TelnyxRTC({ login: sipUsername, password: sipPassword })`.
         *   Sets `callState` to `'connecting'`.
     *   **Event Listeners**: Attaches event listeners to the `telnyxClient` instance:
@@ -137,12 +136,12 @@ The component relies heavily on `useState` and `useRef` for managing:
         *   Hangs up `currentCall` if one exists.
 
 ### 5.3. Caller ID Management
-*   **Input**: If `isCallerIdNeeded` is true, an input field and "Save Caller ID" button are shown.
+*   **Input**: If `isCallerIdNeeded` is true, an input field and "Save Caller ID" button are shown within a `Card` component.
 *   **`handleSaveCallerId`**:
-    *   Trims and formats the input (prepends `+` if missing).
+    *   Trims and formats the input (prepends `+` if missing, basic validation).
     *   Saves to `localStorage` under `CALLER_ID_STORAGE_KEY`.
     *   Updates `callerId` state, sets `isCallerIdNeeded` to `false`.
-    *   Resets `callState` to allow Telnyx client to re-attempt connection with the new Caller ID.
+    *   The main `useEffect` hook (dependent on `callerId` state) will then re-run to attempt Telnyx client connection.
 
 ### 5.4. Call Lifecycle
 *   **`attachCallListeners(call: TelnyxCall)`**:
@@ -160,7 +159,7 @@ The component relies heavily on `useState` and `useRef` for managing:
 *   **`handleAnswerIncomingCall()`**:
     *   Called when the user clicks "Answer" on the `IncomingCallAlert`.
     *   Calls `incomingCallDetails.call.answer()`.
-    *   Updates UI state.
+    *   Updates UI state (closes alert, `currentCall` is already set).
 *   **`handleHangup()`**:
     *   If an incoming call is ringing (`isReceivingCall`), it declines by calling `incomingCallDetails.call.hangup()`. Logs a missed call.
     *   If an active call exists (`currentCall`), it calls `currentCall.hangup()`.
@@ -170,11 +169,18 @@ The component relies heavily on `useState` and `useRef` for managing:
     *   Clears `remoteAudioRef.current.srcObject`.
     *   Clears `currentCall`.
     *   Calls `resetCallVisualState`.
-*   **`resetCallVisualState()`**: Resets UI elements like `cname`, `isMuted`, `isOnHold`, `callStartTime`, etc., to their default states. Sets `callState` appropriately based on `telnyxClient` connection.
+*   **`resetCallVisualState()`**: Resets UI elements like `cname`, `isMuted`, `isOnHold`, `callStartTime`, etc., to their default states. Sets `callState` appropriately based on `telnyxClient` connection status and whether Caller ID is needed.
 
 ### 5.5. Call Controls
 *   **Mute/Unmute (`handleMuteToggle`)**: Calls `currentCall.muteAudio()` or `currentCall.unmuteAudio()`. Updates `isMuted` state.
-*   **Hold/Unhold (`handleHoldToggle`)**: Calls `currentCall.hold()` or `currentCall.unhold()`. Updates `isOnHold` state. Note: `hold()` and `unhold()` are asynchronous.
+*   **Hold/Unhold (`handleHoldToggle`)**: Calls `currentCall.hold()` or `currentCall.unhold()`. Updates `isOnHold` state. Note: `hold()` and `unhold()` are asynchronous; UI state updates also rely on `telnyx.stateChange` events.
+*   **DTMF (`handleSendDtmf(digit: string)`)**:
+    *   Checks if `currentCall` is active.
+    *   Calls `currentCall.dtmf(digit)`.
+    *   Shows a toast notification.
+*   **Transfer Call / Add Call (Placeholders)**:
+    *   Buttons for these features are present in `CallControls.tsx` but are disabled.
+    *   Tooltips explain that these require backend integration, as the client-side SDK does not provide these complex call-routing features directly.
 
 ### 5.6. Call Logging (`addCallToLog`, `CallHistory.tsx`)
 *   `addCallToLog`: Creates a `CallLogEntry` object with details like phone number, type, start time, duration, and status. Prepends it to the `callLog` state array. Uses `uuidv4` for unique IDs.
@@ -183,9 +189,12 @@ The component relies heavily on `useState` and `useRef` for managing:
 ## 6. Key UI Components
 
 *   **`src/components/auth/LoginForm.tsx`**: Standard form using `useActionState` for handling server action responses.
-*   **`src/components/call/Dialpad.tsx`**: Renders a numerical dialpad. Manages number input and triggers `onMakeCall`.
+*   **`src/components/call/Dialpad.tsx`**: Renders a numerical dialpad for initiating calls. Manages number input and triggers `onMakeCall`.
 *   **`src/components/call/CallDisplay.tsx`**: Displays current `callState` (e.g., "Active Call", "Ringing..."), connected number/name, and call duration (updates via `useEffect` and a timer).
-*   **`src/components/call/CallControls.tsx`**: Provides buttons for Mute, Hold, Hangup, and Answer (conditionally). Button availability/state depends on the current `callState`.
+*   **`src/components/call/CallControls.tsx`**:
+    *   Provides buttons for Mute, Hold, Hangup, and Answer (conditionally). Button availability/state depends on the current `callState`.
+    *   Displays a DTMF keypad (0-9, \*, #) when a call is active. Each button triggers `onSendDtmf`.
+    *   Includes disabled buttons for "Transfer Call" and "Add Call" with informative tooltips about their future implementation requiring backend logic.
 *   **`src/components/call/IncomingCallAlert.tsx`**: A modal dialog that appears for incoming calls, offering Answer/Decline options.
 *   **`src/components/history/CallHistory.tsx`**: Renders a scrollable table of past calls from the `callLog` prop.
 
@@ -197,7 +206,7 @@ The component relies heavily on `useState` and `useRef` for managing:
 
 ## 8. Type Definitions (`src/types/call.ts`)
 
-*   **`CallState`**: An enum-like type defining the various states the application can be in regarding the Telnyx client connection and active calls. This helps manage UI changes based on call status.
+*   **`CallState`**: An enum-like type defining the various states the application can be in regarding the Telnyx client connection and active calls. This helps manage UI changes based on call status. It includes states for client connection (`connecting`, `connected`, `disconnected`) and Telnyx call states (`new`, `trying`, `ringing`, `active`, `held`, `hangup`, etc.).
 *   **`CallLogEntry`**: Defines the structure for objects stored in the call history.
 
 ## 9. Security Considerations
@@ -209,17 +218,14 @@ The component relies heavily on `useState` and `useRef` for managing:
 
 ## 10. Potential Future Enhancements (from `README.md`)
 
-*   Video Calling.
-*   Audio Input/Output Device Selection.
-*   DTMF (Dial Tones) during an active call.
-*   Advanced Call Control (via Telnyx V2 APIs).
-*   Pre-Call Diagnostics (`TelnyxRTC.PreCallDiagnosis.run(...)`).
-*   Connection Recovery Logic.
-*   Presence & User Status.
-*   UI/UX Refinements.
-*   Robust Backend Authentication (BFF, token-based).
+*   **Video Calling**.
+*   **Audio Input/Output Device Selection**.
+*   **Advanced Call Control (Transfer, Conference)**: Implement full Call Transfer and Conferencing (Add Call) features. This will require significant backend development using Telnyx Call Control V2 APIs to manage call legs and media mixing, as these are not simple client-side SDK operations.
+*   **Pre-Call Diagnostics** (`TelnyxRTC.PreCallDiagnosis.run(...)`).
+*   **Connection Recovery Logic**.
+*   **Presence & User Status**.
+*   **UI/UX Refinements**.
+*   **Robust Backend Authentication** (BFF, token-based).
 *   More sophisticated state management if the application grows significantly.
 
 This document should serve as a good reference for understanding the current state and architecture of the WebRTC Talk application.
-
-    

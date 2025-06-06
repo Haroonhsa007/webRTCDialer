@@ -30,6 +30,8 @@ Welcome to WebRTC Talk! This application lets you make voice calls directly from
 6.  **During a Call**:
     *   **Mute/Unmute**: Click the microphone icon to mute or unmute your audio.
     *   **Hold/Resume**: Click the pause icon to put the call on hold. Click the play icon (which appears when a call is on hold) to resume the call.
+    *   **Send DTMF (Touch Tones)**: If you need to interact with an automated system (like an IVR or conference call menu), a DTMF keypad will appear below the main call controls when your call is active. Click the numbers (0-9, *, #) on this keypad to send the corresponding tones.
+    *   **Transfer Call / Add Call (Future Features)**: You may see buttons for "Transfer Call" and "Add Call." These are placeholders for advanced functionalities that are not yet implemented.
     *   **Hang Up**: Click the red phone icon to end the active call.
 7.  **Call History**:
     *   Your recent calls (incoming, outgoing, missed) along with their duration and time will be listed in the "Call History" section on the dashboard.
@@ -119,7 +121,13 @@ The application will typically be available at `http://localhost:9002`.
 *   **Call Lifecycle Management**:
     *   **Outgoing Calls**: `client.newCall({ destinationNumber, callerNumber, callerName })` is used to initiate calls.
     *   **Incoming Calls**: The `call` object from the `callUpdate` notification is used. `call.answer()` to answer, `call.hangup()` to decline.
-    *   **Active Call Controls**: Methods on the `TelnyxCall` object (e.g., `call.hangup()`, `call.muteAudio()`, `call.unmuteAudio()`, `call.hold()`, `call.unhold()`) are used to manage the call state.
+    *   **Active Call Controls**: Methods on the `TelnyxCall` object (e.g., `call.hangup()`, `call.muteAudio()`, `call.unmuteAudio()`, `call.hold()`, `call.unhold()`, `call.dtmf()`) are used to manage the call state.
+*   **DTMF (Touch Tones)**:
+    *   The `CallControls.tsx` component displays a DTMF keypad when a call is active.
+    *   The `handleSendDtmf` function in `DashboardPage.tsx` calls `currentCall.dtmf(digit)` to send the tone.
+*   **Call Transfer & Add Call (Placeholders)**:
+    *   UI buttons for "Transfer Call" and "Add Call" are present in `CallControls.tsx`.
+    *   These are currently **disabled** with tooltips indicating they require backend integration (e.g., with Telnyx Call Control V2 APIs) for full functionality. The client-side SDK alone does not provide these advanced call-routing features.
 *   **Remote Audio**: An `<audio id="remoteAudio" autoPlay playsInline />` element in `src/app/dashboard/layout.tsx` is used. The remote media stream from the call (`call.remoteStream`) is attached to this element's `srcObject` to play the audio from the other party.
 
 ### Key Files & Project Structure
@@ -133,21 +141,22 @@ The application will typically be available at `http://localhost:9002`.
     *   Initializing and connecting the `TelnyxRTC` client.
     *   Handling all Telnyx client and call event listeners.
     *   Managing UI state related to calls (e.g., `callState`, `currentCall`, `isMuted`, `isOnHold`).
-    *   Functions for making calls, answering, hanging up, muting, and holding.
+    *   Functions for making calls, answering, hanging up, muting, holding, and sending DTMF.
     *   Call logging.
 *   **`src/app/dashboard/layout.tsx`**: The layout for the authenticated dashboard section. It includes the global header with the logout button and the crucial `<audio id="remoteAudio" />` element for playing remote call audio.
 *   **`src/app/dashboard/error.tsx`**: Custom error boundary for the dashboard.
 *   **`src/app/dashboard/loading.tsx`**: Custom loading UI for the dashboard.
 *   **`src/components/call/`**: Directory containing UI components related to call functionality:
-    *   `Dialpad.tsx`: The numerical dialpad for inputting numbers.
+    *   `Dialpad.tsx`: The numerical dialpad for inputting numbers to call.
     *   `CallDisplay.tsx`: Shows the current call status, connected number/name, and call duration.
-    *   `CallControls.tsx`: Buttons for mute, hold, hangup, and answering incoming calls.
+    *   `CallControls.tsx`: Buttons for mute, hold, hangup, answering incoming calls, and the DTMF keypad. Also includes placeholder buttons for Transfer and Add Call.
     *   `IncomingCallAlert.tsx`: A modal/alert that appears for incoming calls.
 *   **`src/components/history/CallHistory.tsx`**: Component to display a log of recent calls.
 *   **`src/types/call.ts`**: TypeScript type definitions for `CallState` and `CallLogEntry`.
 *   **`src/hooks/use-toast.ts`**: Custom hook for displaying toast notifications using ShadCN's toast components.
 *   **`package.json`**: Lists project dependencies, including `@telnyx/webrtc`, and scripts for running the application.
 *   **`README.md`**: This file.
+*   **`TECHNICAL.md`**: Detailed technical documentation of the codebase.
 
 ### Important Security Note for Developers
 Storing SIP credentials directly in client-readable cookies (not `httpOnly`) and relying on client-side `localStorage` for Caller ID is implemented in this demo for simplicity and to facilitate direct client-side SDK initialization with user-provided credentials. **For production applications, this is NOT a recommended security practice due to risks like XSS attacks.**
@@ -171,8 +180,7 @@ Consider the following for a more secure production environment:
 This demo provides a foundation. Here are some ideas for further development:
 *   **Video Calling**: Extend the application to support video calls using the Telnyx SDK's video capabilities.
 *   **Audio Input/Output Device Selection**: Allow users to select their preferred microphone and speaker devices using `client.getAudioInDevices()`, `client.getAudioOutDevices()`, `call.setAudioInDevice()`, and `call.setAudioOutDevice()`.
-*   **DTMF (Dial Tones)**: Implement functionality to send DTMF tones during an active call using `call.dtmf('123#*')`.
-*   **Advanced Call Control**: Integrate with Telnyx Call Control V2 APIs for more sophisticated server-side call management (e.g., call recording, programmatic call transfers, conferencing).
+*   **Advanced Call Control (Transfer, Conference)**: Implement full Call Transfer and Conferencing (Add Call) features. This will require significant backend development using Telnyx Call Control V2 APIs to manage call legs and media mixing.
 *   **Pre-Call Diagnostics**: Implement `TelnyxRTC.PreCallDiagnosis.run(...)` to test network quality before initiating a call.
 *   **Connection Recovery**: Enhance the logic for automatically retrying connections if the Telnyx WebSocket disconnects.
 *   **Presence & User Status**: If building a team application, indicate user availability.
