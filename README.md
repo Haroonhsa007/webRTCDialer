@@ -1,4 +1,3 @@
-
 # WebRTC Talk - A Telnyx WebRTC Next.js Demo
 
 This is a Next.js application demonstrating how to integrate the Telnyx WebRTC SDK to build a web-based calling application. It allows users to make and receive calls using their Telnyx SIP Connections.
